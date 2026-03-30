@@ -59,7 +59,7 @@ export default function App() {
   }
 
   return (
-    <Router>
+    <Router basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route path="/" element={user ? <AdminDashboard /> : <Login />} />
         <Route path="/share/:id" element={<SharedPlotView />} />

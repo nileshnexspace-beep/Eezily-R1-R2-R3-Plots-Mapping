@@ -259,7 +259,8 @@ export default function AdminDashboard() {
   };
 
   const copyShareLink = (id: string) => {
-    const url = `${window.location.origin}/share/${id}`;
+    const baseUrl = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+    const url = `${window.location.origin}${baseUrl}share/${id}`;
     navigator.clipboard.writeText(url);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
