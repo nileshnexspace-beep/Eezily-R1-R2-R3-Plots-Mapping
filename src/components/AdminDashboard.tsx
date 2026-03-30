@@ -17,6 +17,8 @@ export default function AdminDashboard() {
   const [locationInput, setLocationInput] = useState('');
   
   // Form state
+  const [societyName, setSocietyName] = useState('');
+  const [unitNumber, setUnitNumber] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerNumber, setOwnerNumber] = useState('');
   const [details, setDetails] = useState('');
@@ -159,6 +161,8 @@ export default function AdminDashboard() {
     // Try to parse coordinates from various Google Maps URL formats or raw lat/lng
     let match = val.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if (!match) match = val.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (!match) match = val.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (!match) match = val.match(/search\/(-?\d+\.\d+),(-?\d+\.\d+)/);
     if (!match) match = val.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
     
     if (match) {
@@ -171,6 +175,8 @@ export default function AdminDashboard() {
     setEditingPlotId(plot.id);
     setNewPlotPos({ lat: plot.lat, lng: plot.lng });
     setLocationInput(`${plot.lat.toFixed(6)}, ${plot.lng.toFixed(6)}`);
+    setSocietyName(plot.societyName || '');
+    setUnitNumber(plot.unitNumber || '');
     setOwnerName(plot.ownerName || '');
     setOwnerNumber(plot.ownerNumber || '');
     setDetails(plot.details || '');
@@ -212,21 +218,25 @@ export default function AdminDashboard() {
     const plotId = editingPlotId || crypto.randomUUID();
 
     try {
-      const documents = editingPlotId ? (plots.find(p => p.id === editingPlotId)?.documents || []) : [];
+      let documents = editingPlotId ? (plots.find(p => p.id === editingPlotId)?.documents || []) : [];
       
       if (files) {
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
+        const uploadPromises = Array.from(files).map(async (file: File) => {
           const storageRef = ref(storage, `plots/${plotId}/${file.name}`);
           await uploadBytes(storageRef, file);
           const url = await getDownloadURL(storageRef);
-          documents.push({ name: file.name, url });
-        }
+          return { name: file.name, url };
+        });
+        
+        const newDocs = await Promise.all(uploadPromises);
+        documents = [...documents, ...newDocs];
       }
 
       const plotData = {
         lat: newPlotPos.lat,
         lng: newPlotPos.lng,
+        societyName,
+        unitNumber,
         details,
         documents,
         authorUid: editingPlotId ? (plots.find(p => p.id === editingPlotId)?.authorUid || auth.currentUser.uid) : auth.currentUser.uid
@@ -246,6 +256,8 @@ export default function AdminDashboard() {
       setIsAdding(false);
       setEditingPlotId(null);
       setLocationInput('');
+      setSocietyName('');
+      setUnitNumber('');
       setOwnerName('');
       setOwnerNumber('');
       setDetails('');
@@ -354,7 +366,14 @@ export default function AdminDashboard() {
                   {plots.map((plot) => (
                     <div key={plot.id} className="p-4 rounded-xl border border-neutral-200 bg-white shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-semibold text-neutral-900">{plot.ownerName || 'Unknown Owner'}</h3>
+                        <div>
+                          <h3 className="font-bold text-neutral-900">
+                            {plot.societyName ? `${plot.societyName} - ${plot.unitNumber || ''}` : (plot.ownerName || 'Unnamed Plot')}
+                          </h3>
+                          {plot.societyName && (
+                            <p className="text-xs text-neutral-500 font-medium">{plot.ownerName}</p>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => startEditing(plot)}
@@ -445,6 +464,26 @@ export default function AdminDashboard() {
                         Required: Click map to drop pin, or paste a map link.
                       </p>
                     )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Society Name</label>
+                    <input
+                      type="text"
+                      value={societyName}
+                      onChange={(e) => setSocietyName(e.target.value)}
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="Enter society name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Unit Number</label>
+                    <input
+                      type="text"
+                      value={unitNumber}
+                      onChange={(e) => setUnitNumber(e.target.value)}
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="Enter unit number (e.g. B-204)"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 mb-1">Owner Name</label>
@@ -557,6 +596,11 @@ export default function AdminDashboard() {
                 onCloseClick={() => setSelectedPlot(null)}
               >
                 <div className="p-1 min-w-[200px] max-w-[250px]">
+                  {selectedPlot.societyName && (
+                    <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
+                      {selectedPlot.societyName} {selectedPlot.unitNumber ? `- ${selectedPlot.unitNumber}` : ''}
+                    </h4>
+                  )}
                   <h3 className="font-bold text-lg mb-1">{selectedPlot.ownerName || 'Unknown Owner'}</h3>
                   <p className="text-neutral-600 mb-3">{selectedPlot.ownerNumber || 'No Number'}</p>
                   <div className="bg-neutral-50 p-3 rounded-lg mb-3">

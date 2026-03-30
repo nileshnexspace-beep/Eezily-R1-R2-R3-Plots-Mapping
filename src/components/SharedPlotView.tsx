@@ -64,9 +64,11 @@ export default function SharedPlotView() {
         <div className="p-6 border-b border-neutral-200 bg-blue-600 text-white">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <MapPin className="text-white opacity-80" />
-            Land Details
+            {plot.societyName ? `${plot.societyName} - ${plot.unitNumber || ''}` : 'Land Details'}
           </h1>
-          <p className="text-sm text-blue-100 mt-1">Shared Property Information</p>
+          <p className="text-sm text-blue-100 mt-1">
+            {plot.societyName ? `Unit ${plot.unitNumber || 'N/A'}` : 'Shared Property Information'}
+          </p>
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto">
@@ -133,7 +135,16 @@ export default function SharedPlotView() {
                   position={{ lat: plot.lat, lng: plot.lng }}
                   onCloseClick={() => setShowInfo(false)}
                 >
-                  <div className="font-medium text-center p-1">Property Location</div>
+                  <div className="font-medium text-center p-1">
+                    {plot.societyName ? (
+                      <div className="flex flex-col">
+                        <span className="text-blue-600 font-bold">{plot.societyName}</span>
+                        <span className="text-xs text-neutral-500">{plot.unitNumber}</span>
+                      </div>
+                    ) : (
+                      'Property Location'
+                    )}
+                  </div>
                 </InfoWindow>
               )}
             </Map>
