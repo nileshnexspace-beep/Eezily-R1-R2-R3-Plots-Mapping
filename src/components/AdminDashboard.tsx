@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { APIProvider, Map, Marker, InfoWindow } from '@vis.gl/react-google-maps';
 import { Plot } from '../types';
-import { MapPin, Upload, Share2, Check, FileText, LogOut, Edit, Trash2, Users, Plus, X } from 'lucide-react';
+import { MapPin, Upload, Share2, Check, FileText, LogOut, Edit, Trash2, Users, Plus, X, Search } from 'lucide-react';
 import { db, auth, storage } from '../firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
@@ -15,6 +15,7 @@ export default function AdminDashboard() {
   const [isAdding, setIsAdding] = useState(false);
   const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
   const [locationInput, setLocationInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   
   // Form state
   const [societyName, setSocietyName] = useState('');
@@ -154,10 +155,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setLocationInput(val);
-    
+  const parseCoordinates = (val: string) => {
     // Try to parse coordinates from various Google Maps URL formats or raw lat/lng
     let match = val.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if (!match) match = val.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);
@@ -166,7 +164,35 @@ export default function AdminDashboard() {
     if (!match) match = val.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
     
     if (match) {
-      setNewPlotPos({ lat: parseFloat(match[1]), lng: parseFloat(match[2]) });
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      setNewPlotPos({ lat, lng });
+      return true;
+    }
+    return false;
+  };
+
+  const handleLocationInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setLocationInput(val);
+    
+    if (parseCoordinates(val)) return;
+
+    // Handle shortened links if possible
+    if (val.includes('maps.app.goo.gl') || val.includes('goo.gl/maps')) {
+      try {
+        const response = await fetch('/api/resolve-map-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: val })
+        });
+        const data = await response.json();
+        if (data.finalUrl) {
+          parseCoordinates(data.finalUrl);
+        }
+      } catch (error) {
+        console.error("Error resolving shortened link:", error);
+      }
     }
   };
 
@@ -278,6 +304,16 @@ export default function AdminDashboard() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const filteredPlots = plots.filter(plot => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (plot.ownerName?.toLowerCase() || '').includes(searchLower) ||
+      (plot.societyName?.toLowerCase() || '').includes(searchLower) ||
+      (plot.details?.toLowerCase() || '').includes(searchLower) ||
+      (plot.unitNumber?.toLowerCase() || '').includes(searchLower)
+    );
+  });
+
   if (userRole === 'loading') {
     return (
       <div className="flex h-screen items-center justify-center bg-neutral-50">
@@ -358,12 +394,23 @@ export default function AdminDashboard() {
                 + Add New Plot
               </button>
 
+              <div className="relative mt-4">
+                <input
+                  type="text"
+                  placeholder="Search by name, society, details..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-neutral-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+                <Search className="absolute left-3 top-2.5 text-neutral-400" size={18} />
+              </div>
+
               <div className="mt-8">
                 <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider mb-4">
-                  Saved Plots ({plots.length})
+                  Saved Plots ({filteredPlots.length})
                 </h2>
                 <div className="space-y-3">
-                  {plots.map((plot) => (
+                  {filteredPlots.map((plot) => (
                     <div key={plot.id} className="p-4 rounded-xl border border-neutral-200 bg-white shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start mb-2">
                         <div>
@@ -581,7 +628,7 @@ export default function AdminDashboard() {
             className="w-full h-full"
           >
             {/* Existing Plots */}
-            {plots.map((plot) => (
+            {filteredPlots.map((plot) => (
               <Marker
                 key={plot.id}
                 position={{ lat: plot.lat, lng: plot.lng }}
