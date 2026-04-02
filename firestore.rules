@@ -10,6 +10,12 @@ service cloud.firestore {
     // Fields:
     //   - lat: number (required)
     //   - lng: number (required)
+    //   - societyName: string (optional)
+    //   - unitNumber: string (optional)
+    //   - size: number (optional)
+    //   - sizeUnit: string (optional, 'SBU' or 'Carpet Area')
+    //   - locality: string (optional)
+    //   - propertyTag: string (optional, 'Owner' or 'Broker')
     //   - details: string (required, < 5000 chars)
     //   - documents: list (optional, max 10 items)
     //   - authorUid: string (required, immutable)
@@ -17,8 +23,8 @@ service cloud.firestore {
     // Collection: plot_owners
     // Document ID: {plotId}
     // Fields:
-    //   - ownerName: string (required, < 100 chars)
-    //   - ownerNumber: string (required, < 50 chars)
+    //   - contactName: string (required, < 100 chars)
+    //   - contactNumber: string (required, < 50 chars)
     //   - authorUid: string (required, immutable)
     //
     // ===============================================================
@@ -89,13 +95,19 @@ service cloud.firestore {
              data.lat is number &&
              data.lng is number &&
              validStringLength('details', 0, 5000) &&
+             (!('societyName' in data) || data.societyName is string) &&
+             (!('unitNumber' in data) || data.unitNumber is string) &&
+             (!('size' in data) || data.size is number) &&
+             (!('sizeUnit' in data) || data.sizeUnit in ['SBU', 'Carpet Area']) &&
+             (!('locality' in data) || data.locality is string) &&
+             (!('propertyTag' in data) || data.propertyTag in ['Owner', 'Broker']) &&
              (!('documents' in data) || (data.documents is list && data.documents.size() <= 10));
     }
 
     function isValidPlotOwner(data) {
-      return hasRequiredFields(['ownerName', 'ownerNumber', 'authorUid']) &&
-             validStringLength('ownerName', 0, 100) &&
-             validStringLength('ownerNumber', 0, 50);
+      return hasRequiredFields(['contactName', 'contactNumber', 'authorUid']) &&
+             validStringLength('contactName', 0, 100) &&
+             validStringLength('contactNumber', 0, 50);
     }
 
     function isValidAllowedEmail(data) {

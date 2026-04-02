@@ -23,7 +23,17 @@ export default function SharedPlotView() {
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
-          setPlot(docSnap.data() as Partial<Plot>);
+          const data = docSnap.data();
+          // Fetch owner data too
+          const ownerRef = doc(db, 'plot_owners', id);
+          const ownerSnap = await getDoc(ownerRef);
+          const ownerData = ownerSnap.exists() ? ownerSnap.data() : {};
+          
+          // Handle renamed fields
+          const contactName = ownerData.contactName || ownerData.ownerName || '';
+          const contactNumber = ownerData.contactNumber || ownerData.ownerNumber || '';
+          
+          setPlot({ ...data, ...ownerData, contactName, contactNumber } as Partial<Plot>);
         } else {
           setError('Plot not found or link is invalid.');
         }
@@ -64,11 +74,27 @@ export default function SharedPlotView() {
         <div className="p-6 border-b border-neutral-200 bg-blue-600 text-white">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <MapPin className="text-white opacity-80" />
-            {plot.societyName ? `${plot.societyName} - ${plot.unitNumber || ''}` : 'Land Details'}
+            {plot.societyName ? `${plot.societyName} - ${plot.unitNumber || ''}` : (plot.locality || 'Land Details')}
           </h1>
-          <p className="text-sm text-blue-100 mt-1">
-            {plot.societyName ? `Unit ${plot.unitNumber || 'N/A'}` : 'Shared Property Information'}
-          </p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {plot.locality && (
+              <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full backdrop-blur-sm">
+                {plot.locality}
+              </span>
+            )}
+            {plot.propertyTag && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                plot.propertyTag === 'Owner' ? 'bg-green-400/30 text-green-50' : 'bg-orange-400/30 text-orange-50'
+              }`}>
+                {plot.propertyTag}
+              </span>
+            )}
+            {plot.size && (
+              <span className="text-xs bg-blue-400/30 text-white px-2 py-0.5 rounded-full font-bold">
+                {plot.size} {plot.sizeUnit}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto">
@@ -135,15 +161,35 @@ export default function SharedPlotView() {
                   position={{ lat: plot.lat, lng: plot.lng }}
                   onCloseClick={() => setShowInfo(false)}
                 >
-                  <div className="font-medium text-center p-1">
+                  <div className="font-medium p-1 min-w-[150px]">
                     {plot.societyName ? (
-                      <div className="flex flex-col">
+                      <div className="flex flex-col mb-2">
                         <span className="text-blue-600 font-bold">{plot.societyName}</span>
                         <span className="text-xs text-neutral-500">{plot.unitNumber}</span>
                       </div>
                     ) : (
-                      'Property Location'
+                      <div className="font-bold text-blue-600 mb-2">{plot.locality || 'Property Location'}</div>
                     )}
+                    
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {plot.propertyTag && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          plot.propertyTag === 'Owner' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'
+                        }`}>
+                          {plot.propertyTag}
+                        </span>
+                      )}
+                      {plot.size && (
+                        <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+                          {plot.size} {plot.sizeUnit}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="text-xs text-neutral-700">
+                      <p className="font-bold">{plot.contactName}</p>
+                      <p>{plot.contactNumber}</p>
+                    </div>
                   </div>
                 </InfoWindow>
               )}

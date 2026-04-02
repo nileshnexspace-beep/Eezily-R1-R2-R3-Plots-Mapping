@@ -4,7 +4,7 @@ import { Plot } from '../types';
 import { MapPin, Upload, Share2, Check, FileText, LogOut, Edit, Trash2, Users, Plus, X, Search } from 'lucide-react';
 import { db, auth, storage } from '../firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, listAll, uploadBytesResumable } from 'firebase/storage';
 import { signOut } from 'firebase/auth';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyDp7t8pm5AiaY5HdnegA9_csUIqlD3HXao';
@@ -20,11 +20,22 @@ export default function AdminDashboard() {
   // Form state
   const [societyName, setSocietyName] = useState('');
   const [unitNumber, setUnitNumber] = useState('');
-  const [ownerName, setOwnerName] = useState('');
-  const [ownerNumber, setOwnerNumber] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactNumber, setContactNumber] = useState('');
+  const [size, setSize] = useState('');
+  const [sizeUnit, setSizeUnit] = useState<'SBU' | 'Carpet Area'>('SBU');
+  const [locality, setLocality] = useState('');
+  const [propertyTag, setPropertyTag] = useState<'Owner' | 'Broker'>('Owner');
   const [details, setDetails] = useState('');
   const [files, setFiles] = useState<FileList | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Filter state
+  const [filterPropertyTag, setFilterPropertyTag] = useState<'All' | 'Owner' | 'Broker'>('All');
+  const [filterMinSize, setFilterMinSize] = useState('');
+  const [filterMaxSize, setFilterMaxSize] = useState('');
+  const [filterLocalities, setFilterLocalities] = useState<string[]>([]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedPlot, setSelectedPlot] = useState<Plot | null>(null);
@@ -90,7 +101,10 @@ export default function AdminDashboard() {
     function combineData() {
       const combined = plotsData.map(plot => {
         const owner = ownersData.find(o => o.id === plot.id) || {};
-        return { ...plot, ...owner };
+        // Handle renamed fields if they exist in older documents
+        const contactName = owner.contactName || owner.ownerName || '';
+        const contactNumber = owner.contactNumber || owner.ownerNumber || '';
+        return { ...plot, ...owner, contactName, contactNumber };
       });
       setPlots(combined);
     }
@@ -203,8 +217,12 @@ export default function AdminDashboard() {
     setLocationInput(`${plot.lat.toFixed(6)}, ${plot.lng.toFixed(6)}`);
     setSocietyName(plot.societyName || '');
     setUnitNumber(plot.unitNumber || '');
-    setOwnerName(plot.ownerName || '');
-    setOwnerNumber(plot.ownerNumber || '');
+    setContactName(plot.contactName || '');
+    setContactNumber(plot.contactNumber || '');
+    setSize(plot.size?.toString() || '');
+    setSizeUnit(plot.sizeUnit || 'SBU');
+    setLocality(plot.locality || '');
+    setPropertyTag(plot.propertyTag || 'Owner');
     setDetails(plot.details || '');
     setFiles(null);
     setSelectedPlot(null); // Close info window
@@ -241,36 +259,64 @@ export default function AdminDashboard() {
     if (!newPlotPos || !auth.currentUser) return;
 
     setIsSubmitting(true);
+    setUploadProgress({});
     const plotId = editingPlotId || crypto.randomUUID();
 
     try {
       let documents = editingPlotId ? (plots.find(p => p.id === editingPlotId)?.documents || []) : [];
       
-      if (files) {
-        const uploadPromises = Array.from(files).map(async (file: File) => {
-          const storageRef = ref(storage, `plots/${plotId}/${file.name}`);
-          await uploadBytes(storageRef, file);
-          const url = await getDownloadURL(storageRef);
-          return { name: file.name, url };
+      if (files && files.length > 0) {
+        console.log(`Starting upload of ${files.length} files...`);
+        const uploadPromises = Array.from(files).map((file: File) => {
+          return new Promise<{ name: string, url: string }>((resolve, reject) => {
+            const storageRef = ref(storage, `plots/${plotId}/${file.name}`);
+            const uploadTask = uploadBytesResumable(storageRef, file);
+
+            uploadTask.on('state_changed', 
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                setUploadProgress(prev => ({ ...prev, [file.name]: progress }));
+              }, 
+              (error) => {
+                console.error("Upload failed for", file.name, error);
+                reject(new Error(`Failed to upload ${file.name}: ${error.message}`));
+              }, 
+              async () => {
+                try {
+                  const url = await getDownloadURL(uploadTask.snapshot.ref);
+                  resolve({ name: file.name, url });
+                } catch (urlErr) {
+                  reject(urlErr);
+                }
+              }
+            );
+          });
         });
         
         const newDocs = await Promise.all(uploadPromises);
         documents = [...documents, ...newDocs];
+        console.log("All files uploaded successfully");
       }
+
+      console.log("Saving plot data to Firestore...");
 
       const plotData = {
         lat: newPlotPos.lat,
         lng: newPlotPos.lng,
         societyName,
         unitNumber,
+        size: parseFloat(size) || 0,
+        sizeUnit,
+        locality,
+        propertyTag,
         details,
         documents,
         authorUid: editingPlotId ? (plots.find(p => p.id === editingPlotId)?.authorUid || auth.currentUser.uid) : auth.currentUser.uid
       };
 
       const ownerData = {
-        ownerName,
-        ownerNumber,
+        contactName,
+        contactNumber,
         authorUid: editingPlotId ? (plots.find(p => p.id === editingPlotId)?.authorUid || auth.currentUser.uid) : auth.currentUser.uid
       };
 
@@ -284,10 +330,15 @@ export default function AdminDashboard() {
       setLocationInput('');
       setSocietyName('');
       setUnitNumber('');
-      setOwnerName('');
-      setOwnerNumber('');
+      setContactName('');
+      setContactNumber('');
+      setSize('');
+      setSizeUnit('SBU');
+      setLocality('');
+      setPropertyTag('Owner');
       setDetails('');
       setFiles(null);
+      setUploadProgress({});
     } catch (err) {
       console.error('Failed to save plot', err);
       alert('Failed to save plot. Please check your permissions.');
@@ -305,13 +356,28 @@ export default function AdminDashboard() {
   };
 
   const filteredPlots = plots.filter(plot => {
+    // Search term filter
     const searchLower = searchTerm.toLowerCase();
-    return (
-      (plot.ownerName?.toLowerCase() || '').includes(searchLower) ||
+    const matchesSearch = (
+      (plot.contactName?.toLowerCase() || '').includes(searchLower) ||
       (plot.societyName?.toLowerCase() || '').includes(searchLower) ||
       (plot.details?.toLowerCase() || '').includes(searchLower) ||
-      (plot.unitNumber?.toLowerCase() || '').includes(searchLower)
+      (plot.unitNumber?.toLowerCase() || '').includes(searchLower) ||
+      (plot.locality?.toLowerCase() || '').includes(searchLower)
     );
+
+    // Property Tag filter
+    const matchesTag = filterPropertyTag === 'All' || plot.propertyTag === filterPropertyTag;
+
+    // Size range filter
+    const minSize = filterMinSize ? parseFloat(filterMinSize) : 0;
+    const maxSize = filterMaxSize ? parseFloat(filterMaxSize) : Infinity;
+    const matchesSize = (plot.size || 0) >= minSize && (plot.size || 0) <= maxSize;
+
+    // Locality filter (multi-select)
+    const matchesLocality = filterLocalities.length === 0 || (plot.locality && filterLocalities.includes(plot.locality));
+
+    return matchesSearch && matchesTag && matchesSize && matchesLocality;
   });
 
   if (userRole === 'loading') {
@@ -384,8 +450,14 @@ export default function AdminDashboard() {
                   setIsAdding(true);
                   setEditingPlotId(null);
                   setLocationInput('');
-                  setOwnerName('');
-                  setOwnerNumber('');
+                  setSocietyName('');
+                  setUnitNumber('');
+                  setContactName('');
+                  setContactNumber('');
+                  setSize('');
+                  setSizeUnit('SBU');
+                  setLocality('');
+                  setPropertyTag('Owner');
                   setDetails('');
                   setFiles(null);
                 }}
@@ -394,18 +466,88 @@ export default function AdminDashboard() {
                 + Add New Plot
               </button>
 
-              <div className="relative mt-4">
-                <input
-                  type="text"
-                  placeholder="Search by name, society, details..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-neutral-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                />
-                <Search className="absolute left-3 top-2.5 text-neutral-400" size={18} />
+              <div className="space-y-4 mt-4 p-4 bg-neutral-50 rounded-xl border border-neutral-200">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search by name, society, details..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-neutral-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                  <Search className="absolute left-3 top-2.5 text-neutral-400" size={18} />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-500 uppercase mb-1">Property Tag</label>
+                    <div className="flex gap-2">
+                      {['All', 'Owner', 'Broker'].map((tag) => (
+                        <button
+                          key={tag}
+                          onClick={() => setFilterPropertyTag(tag as any)}
+                          className={`flex-1 py-1 text-xs rounded-md border transition-colors ${
+                            filterPropertyTag === tag 
+                              ? 'bg-blue-600 text-white border-blue-600' 
+                              : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-500 uppercase mb-1">Size Range</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        value={filterMinSize}
+                        onChange={(e) => setFilterMinSize(e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-neutral-200 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                      <span className="text-neutral-400">-</span>
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        value={filterMaxSize}
+                        onChange={(e) => setFilterMaxSize(e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-neutral-200 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-500 uppercase mb-1">Locality Filter</label>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1 border border-neutral-200 rounded bg-white">
+                      {Array.from(new Set(plots.map(p => p.locality).filter(Boolean))).map((loc) => (
+                        <button
+                          key={loc}
+                          onClick={() => {
+                            setFilterLocalities(prev => 
+                              prev.includes(loc!) ? prev.filter(l => l !== loc) : [...prev, loc!]
+                            );
+                          }}
+                          className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
+                            filterLocalities.includes(loc!)
+                              ? 'bg-blue-100 text-blue-700 border-blue-200'
+                              : 'bg-neutral-50 text-neutral-500 border-neutral-100 hover:bg-neutral-100'
+                          }`}
+                        >
+                          {loc}
+                        </button>
+                      ))}
+                      {plots.filter(p => p.locality).length === 0 && (
+                        <span className="text-[10px] text-neutral-400 italic">No localities found</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-8">
+              <div className="mt-6">
                 <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider mb-4">
                   Saved Plots ({filteredPlots.length})
                 </h2>
@@ -415,10 +557,29 @@ export default function AdminDashboard() {
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <h3 className="font-bold text-neutral-900">
-                            {plot.societyName ? `${plot.societyName} - ${plot.unitNumber || ''}` : (plot.ownerName || 'Unnamed Plot')}
+                            {plot.societyName ? `${plot.societyName} - ${plot.unitNumber || ''}` : (plot.contactName || 'Unnamed Plot')}
                           </h3>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {plot.locality && (
+                              <span className="text-[10px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                <MapPin size={8} /> {plot.locality}
+                              </span>
+                            )}
+                            {plot.propertyTag && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                plot.propertyTag === 'Owner' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'
+                              }`}>
+                                {plot.propertyTag}
+                              </span>
+                            )}
+                            {plot.size && (
+                              <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+                                {plot.size} {plot.sizeUnit}
+                              </span>
+                            )}
+                          </div>
                           {plot.societyName && (
-                            <p className="text-xs text-neutral-500 font-medium">{plot.ownerName}</p>
+                            <p className="text-xs text-neutral-500 font-medium mt-1">{plot.contactName}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-1">
@@ -445,7 +606,7 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                       </div>
-                      <p className="text-sm text-neutral-600 mb-1">{plot.ownerNumber || 'No Number'}</p>
+                      <p className="text-sm text-neutral-600 mb-1">{plot.contactNumber || 'No Number'}</p>
                       <p className="text-xs text-neutral-500 line-clamp-2">{plot.details}</p>
                       {plot.documents && plot.documents.length > 0 && (
                         <div className="mt-3 flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-md w-fit">
@@ -513,6 +674,16 @@ export default function AdminDashboard() {
                     )}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Locality</label>
+                    <input
+                      type="text"
+                      value={locality}
+                      onChange={(e) => setLocality(e.target.value)}
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="Enter locality name"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-neutral-700 mb-1">Society Name</label>
                     <input
                       type="text"
@@ -522,34 +693,70 @@ export default function AdminDashboard() {
                       placeholder="Enter society name"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1">Unit Number</label>
-                    <input
-                      type="text"
-                      value={unitNumber}
-                      onChange={(e) => setUnitNumber(e.target.value)}
-                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                      placeholder="Enter unit number (e.g. B-204)"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-700 mb-1">Unit Number</label>
+                      <input
+                        type="text"
+                        value={unitNumber}
+                        onChange={(e) => setUnitNumber(e.target.value)}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        placeholder="e.g. B-204"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-700 mb-1">Property Tag</label>
+                      <select
+                        value={propertyTag}
+                        onChange={(e) => setPropertyTag(e.target.value as 'Owner' | 'Broker')}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      >
+                        <option value="Owner">Owner Property</option>
+                        <option value="Broker">Broker Property</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-700 mb-1">Size</label>
+                      <input
+                        type="number"
+                        value={size}
+                        onChange={(e) => setSize(e.target.value)}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        placeholder="Enter size"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-700 mb-1">Unit</label>
+                      <select
+                        value={sizeUnit}
+                        onChange={(e) => setSizeUnit(e.target.value as 'SBU' | 'Carpet Area')}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      >
+                        <option value="SBU">SBU</option>
+                        <option value="Carpet Area">Carpet Area</option>
+                      </select>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1">Owner Name</label>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Contact Name</label>
                     <input
                       required
                       type="text"
-                      value={ownerName}
-                      onChange={(e) => setOwnerName(e.target.value)}
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
                       className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                       placeholder="John Doe"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1">Owner Number</label>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">Contact Number</label>
                     <input
                       required
                       type="text"
-                      value={ownerNumber}
-                      onChange={(e) => setOwnerNumber(e.target.value)}
+                      value={contactNumber}
+                      onChange={(e) => setContactNumber(e.target.value)}
                       className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                       placeholder="+1 234 567 8900"
                     />
@@ -584,8 +791,37 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     {files && files.length > 0 && (
-                      <div className="mt-2 text-sm text-neutral-600">
-                        {files.length} file(s) selected
+                      <div className="mt-3 space-y-2">
+                        <div className="text-sm font-medium text-neutral-700 flex justify-between items-center">
+                          <span>{files.length} file(s) selected</span>
+                          {!isSubmitting && (
+                            <button 
+                              type="button"
+                              onClick={() => setFiles(null)}
+                              className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+                            >
+                              <X size={12} />
+                              Clear
+                            </button>
+                          )}
+                          {isSubmitting && (
+                            <span className="text-blue-600 animate-pulse">Uploading...</span>
+                          )}
+                        </div>
+                        {isSubmitting && Object.entries(uploadProgress).map(([name, progress]) => (
+                          <div key={name} className="space-y-1">
+                            <div className="flex justify-between text-[10px] text-neutral-500">
+                              <span className="truncate max-w-[200px]">{name}</span>
+                              <span>{Math.round(progress as number)}%</span>
+                            </div>
+                            <div className="w-full bg-neutral-100 rounded-full h-1">
+                              <div 
+                                className="bg-blue-600 h-1 rounded-full transition-all duration-300" 
+                                style={{ width: `${progress as number}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -648,8 +884,27 @@ export default function AdminDashboard() {
                       {selectedPlot.societyName} {selectedPlot.unitNumber ? `- ${selectedPlot.unitNumber}` : ''}
                     </h4>
                   )}
-                  <h3 className="font-bold text-lg mb-1">{selectedPlot.ownerName || 'Unknown Owner'}</h3>
-                  <p className="text-neutral-600 mb-3">{selectedPlot.ownerNumber || 'No Number'}</p>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {selectedPlot.locality && (
+                      <span className="text-[10px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <MapPin size={8} /> {selectedPlot.locality}
+                      </span>
+                    )}
+                    {selectedPlot.propertyTag && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                        selectedPlot.propertyTag === 'Owner' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'
+                      }`}>
+                        {selectedPlot.propertyTag}
+                      </span>
+                    )}
+                    {selectedPlot.size && (
+                      <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+                        {selectedPlot.size} {selectedPlot.sizeUnit}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-bold text-lg mb-1">{selectedPlot.contactName || 'Unknown Contact'}</h3>
+                  <p className="text-neutral-600 mb-3">{selectedPlot.contactNumber || 'No Number'}</p>
                   <div className="bg-neutral-50 p-3 rounded-lg mb-3">
                     <p className="text-sm text-neutral-700 whitespace-pre-wrap">{selectedPlot.details}</p>
                   </div>

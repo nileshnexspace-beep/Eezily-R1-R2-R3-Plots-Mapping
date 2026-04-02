@@ -7,6 +7,12 @@
       "properties": {
         "lat": { "type": "number", "description": "Latitude" },
         "lng": { "type": "number", "description": "Longitude" },
+        "societyName": { "type": "string", "description": "Name of the society" },
+        "unitNumber": { "type": "string", "description": "Unit number" },
+        "size": { "type": "number", "description": "Size of the plot" },
+        "sizeUnit": { "type": "string", "enum": ["SBU", "Carpet Area"] },
+        "locality": { "type": "string", "description": "Locality name" },
+        "propertyTag": { "type": "string", "enum": ["Owner", "Broker"] },
         "details": { "type": "string", "description": "Description of the land" },
         "documents": {
           "type": "array",
@@ -24,14 +30,14 @@
     },
     "PlotOwner": {
       "title": "PlotOwner",
-      "description": "Private owner details of a land plot.",
+      "description": "Private contact details of a land plot.",
       "type": "object",
       "properties": {
-        "ownerName": { "type": "string", "description": "Name of the owner" },
-        "ownerNumber": { "type": "string", "description": "Contact number of the owner" },
+        "contactName": { "type": "string", "description": "Name of the contact" },
+        "contactNumber": { "type": "string", "description": "Contact number" },
         "authorUid": { "type": "string", "description": "UID of the user who created the plot" }
       },
-      "required": ["ownerName", "ownerNumber", "authorUid"]
+      "required": ["contactName", "contactNumber", "authorUid"]
     },
     "AllowedEmail": {
       "title": "AllowedEmail",
