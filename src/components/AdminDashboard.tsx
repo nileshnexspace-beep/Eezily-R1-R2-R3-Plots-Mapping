@@ -23,8 +23,10 @@ export default function AdminDashboard() {
   const [contactName, setContactName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [size, setSize] = useState('');
-  const [sizeUnit, setSizeUnit] = useState<'SBU' | 'Carpet Area'>('SBU');
+  const [pricePerSqyd, setPricePerSqyd] = useState('');
+  const [totalPrice, setTotalPrice] = useState('');
   const [locality, setLocality] = useState('');
+  const [showLocalitySuggestions, setShowLocalitySuggestions] = useState(false);
   const [propertyTag, setPropertyTag] = useState<'Owner' | 'Broker'>('Owner');
   const [details, setDetails] = useState('');
   const [files, setFiles] = useState<FileList | null>(null);
@@ -189,16 +191,20 @@ export default function AdminDashboard() {
   const handleLocationInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setLocationInput(val);
+  };
+
+  const handleMarkPin = async () => {
+    if (!locationInput) return;
     
-    if (parseCoordinates(val)) return;
+    if (parseCoordinates(locationInput)) return;
 
     // Handle shortened links if possible
-    if (val.includes('maps.app.goo.gl') || val.includes('goo.gl/maps')) {
+    if (locationInput.includes('maps.app.goo.gl') || locationInput.includes('goo.gl/maps')) {
       try {
         const response = await fetch('/api/resolve-map-link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: val })
+          body: JSON.stringify({ url: locationInput })
         });
         const data = await response.json();
         if (data.finalUrl) {
@@ -207,6 +213,39 @@ export default function AdminDashboard() {
       } catch (error) {
         console.error("Error resolving shortened link:", error);
       }
+    }
+  };
+
+  const handleSizeChange = (val: string) => {
+    setSize(val);
+    const s = parseFloat(val);
+    const p = parseFloat(pricePerSqyd);
+    const t = parseFloat(totalPrice);
+
+    if (!isNaN(s) && !isNaN(p)) {
+      setTotalPrice((s * p).toFixed(2));
+    } else if (!isNaN(s) && !isNaN(t)) {
+      setPricePerSqyd((t / s).toFixed(2));
+    }
+  };
+
+  const handlePricePerSqydChange = (val: string) => {
+    setPricePerSqyd(val);
+    const s = parseFloat(size);
+    const p = parseFloat(val);
+
+    if (!isNaN(s) && !isNaN(p)) {
+      setTotalPrice((s * p).toFixed(2));
+    }
+  };
+
+  const handleTotalPriceChange = (val: string) => {
+    setTotalPrice(val);
+    const s = parseFloat(size);
+    const t = parseFloat(val);
+
+    if (!isNaN(s) && !isNaN(t) && s !== 0) {
+      setPricePerSqyd((t / s).toFixed(2));
     }
   };
 
@@ -220,7 +259,8 @@ export default function AdminDashboard() {
     setContactName(plot.contactName || '');
     setContactNumber(plot.contactNumber || '');
     setSize(plot.size?.toString() || '');
-    setSizeUnit(plot.sizeUnit || 'SBU');
+    setPricePerSqyd(plot.pricePerSqyd?.toString() || '');
+    setTotalPrice(plot.totalPrice?.toString() || '');
     setLocality(plot.locality || '');
     setPropertyTag(plot.propertyTag || 'Owner');
     setDetails(plot.details || '');
@@ -306,7 +346,8 @@ export default function AdminDashboard() {
         societyName,
         unitNumber,
         size: parseFloat(size) || 0,
-        sizeUnit,
+        pricePerSqyd: parseFloat(pricePerSqyd) || 0,
+        totalPrice: parseFloat(totalPrice) || 0,
         locality,
         propertyTag,
         details,
@@ -333,7 +374,8 @@ export default function AdminDashboard() {
       setContactName('');
       setContactNumber('');
       setSize('');
-      setSizeUnit('SBU');
+      setPricePerSqyd('');
+      setTotalPrice('');
       setLocality('');
       setPropertyTag('Owner');
       setDetails('');
@@ -455,7 +497,8 @@ export default function AdminDashboard() {
                   setContactName('');
                   setContactNumber('');
                   setSize('');
-                  setSizeUnit('SBU');
+                  setPricePerSqyd('');
+                  setTotalPrice('');
                   setLocality('');
                   setPropertyTag('Owner');
                   setDetails('');
@@ -574,7 +617,17 @@ export default function AdminDashboard() {
                             )}
                             {plot.size && (
                               <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
-                                {plot.size} {plot.sizeUnit}
+                                {plot.size} Sqyd
+                              </span>
+                            )}
+                            {plot.pricePerSqyd && (
+                              <span className="text-[10px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">
+                                ₹{plot.pricePerSqyd}/Sqyd
+                              </span>
+                            )}
+                            {plot.totalPrice && (
+                              <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded font-medium">
+                                Total: ₹{plot.totalPrice}
                               </span>
                             )}
                           </div>
@@ -656,32 +709,68 @@ export default function AdminDashboard() {
                 <form onSubmit={handleSubmit} className="p-4 space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 mb-1">Location (Link or Coordinates)</label>
-                    <input
-                      type="text"
-                      value={locationInput}
-                      onChange={handleLocationInputChange}
-                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                      placeholder="Paste Google Maps link or click on map"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={locationInput}
+                        onChange={handleLocationInputChange}
+                        className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        placeholder="Paste Google Maps link or click on map"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleMarkPin}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                      >
+                        Enter
+                      </button>
+                    </div>
                     {newPlotPos ? (
                       <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
                         <Check size={12} /> Location set ({newPlotPos.lat.toFixed(4)}, {newPlotPos.lng.toFixed(4)})
                       </p>
                     ) : (
                       <p className="text-xs text-neutral-500 mt-1">
-                        Required: Click map to drop pin, or paste a map link.
+                        Required: Click map to drop pin, or paste a map link and click Enter.
                       </p>
                     )}
                   </div>
-                  <div>
+                  <div className="relative">
                     <label className="block text-sm font-medium text-neutral-700 mb-1">Locality</label>
                     <input
                       type="text"
                       value={locality}
-                      onChange={(e) => setLocality(e.target.value)}
+                      onChange={(e) => {
+                        setLocality(e.target.value);
+                        setShowLocalitySuggestions(true);
+                      }}
+                      onFocus={() => setShowLocalitySuggestions(true)}
+                      onBlur={() => {
+                        // Delay hiding to allow clicking on suggestion
+                        setTimeout(() => setShowLocalitySuggestions(false), 200);
+                      }}
                       className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                       placeholder="Enter locality name"
                     />
+                    {showLocalitySuggestions && locality.length > 0 && (
+                      <div className="absolute z-[1100] w-full mt-1 bg-white border border-neutral-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                        {Array.from(new Set(plots.map(p => p.locality).filter(Boolean)))
+                          .filter(loc => (loc as string).toLowerCase().includes(locality.toLowerCase()) && loc !== locality)
+                          .map((loc, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => {
+                                setLocality(loc as string);
+                                setShowLocalitySuggestions(false);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition-colors border-b border-neutral-50 last:border-0"
+                            >
+                              {loc as string}
+                            </button>
+                          ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-neutral-700 mb-1">Society Name</label>
@@ -716,27 +805,38 @@ export default function AdminDashboard() {
                       </select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-neutral-700 mb-1">Size</label>
+                      <label className="block text-sm font-medium text-neutral-700 mb-1">Size (Sqyd)</label>
                       <input
                         type="number"
                         value={size}
-                        onChange={(e) => setSize(e.target.value)}
+                        onChange={(e) => handleSizeChange(e.target.value)}
                         className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                        placeholder="Enter size"
+                        placeholder="Enter size in Sqyd"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-neutral-700 mb-1">Unit</label>
-                      <select
-                        value={sizeUnit}
-                        onChange={(e) => setSizeUnit(e.target.value as 'SBU' | 'Carpet Area')}
-                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                      >
-                        <option value="SBU">SBU</option>
-                        <option value="Carpet Area">Carpet Area</option>
-                      </select>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-700 mb-1">Price per Sqyd</label>
+                        <input
+                          type="number"
+                          value={pricePerSqyd}
+                          onChange={(e) => handlePricePerSqydChange(e.target.value)}
+                          className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                          placeholder="Price/Sqyd"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-neutral-700 mb-1">Total Price</label>
+                        <input
+                          type="number"
+                          value={totalPrice}
+                          onChange={(e) => handleTotalPriceChange(e.target.value)}
+                          className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                          placeholder="Total Price"
+                        />
+                      </div>
                     </div>
                   </div>
                   <div>

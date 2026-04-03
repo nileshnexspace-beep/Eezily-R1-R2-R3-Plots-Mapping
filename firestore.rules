@@ -12,8 +12,9 @@ service cloud.firestore {
     //   - lng: number (required)
     //   - societyName: string (optional)
     //   - unitNumber: string (optional)
-    //   - size: number (optional)
-    //   - sizeUnit: string (optional, 'SBU' or 'Carpet Area')
+    //   - size: number (optional, in Sqyd)
+    //   - pricePerSqyd: number (optional)
+    //   - totalPrice: number (optional)
     //   - locality: string (optional)
     //   - propertyTag: string (optional, 'Owner' or 'Broker')
     //   - details: string (required, < 5000 chars)
@@ -98,7 +99,8 @@ service cloud.firestore {
              (!('societyName' in data) || data.societyName is string) &&
              (!('unitNumber' in data) || data.unitNumber is string) &&
              (!('size' in data) || data.size is number) &&
-             (!('sizeUnit' in data) || data.sizeUnit in ['SBU', 'Carpet Area']) &&
+             (!('pricePerSqyd' in data) || data.pricePerSqyd is number) &&
+             (!('totalPrice' in data) || data.totalPrice is number) &&
              (!('locality' in data) || data.locality is string) &&
              (!('propertyTag' in data) || data.propertyTag in ['Owner', 'Broker']) &&
              (!('documents' in data) || (data.documents is list && data.documents.size() <= 10));

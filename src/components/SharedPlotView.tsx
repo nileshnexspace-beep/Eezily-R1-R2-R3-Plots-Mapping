@@ -91,7 +91,17 @@ export default function SharedPlotView() {
             )}
             {plot.size && (
               <span className="text-xs bg-blue-400/30 text-white px-2 py-0.5 rounded-full font-bold">
-                {plot.size} {plot.sizeUnit}
+                {plot.size} Sqyd
+              </span>
+            )}
+            {plot.pricePerSqyd && (
+              <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full backdrop-blur-sm">
+                ₹{plot.pricePerSqyd}/Sqyd
+              </span>
+            )}
+            {plot.totalPrice && (
+              <span className="text-xs bg-green-400/30 text-green-50 px-2 py-0.5 rounded-full font-bold">
+                Total: ₹{plot.totalPrice}
               </span>
             )}
           </div>
@@ -181,7 +191,12 @@ export default function SharedPlotView() {
                       )}
                       {plot.size && (
                         <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
-                          {plot.size} {plot.sizeUnit}
+                          {plot.size} Sqyd
+                        </span>
+                      )}
+                      {plot.pricePerSqyd && (
+                        <span className="text-[10px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded">
+                          ₹{plot.pricePerSqyd}/Sqyd
                         </span>
                       )}
                     </div>

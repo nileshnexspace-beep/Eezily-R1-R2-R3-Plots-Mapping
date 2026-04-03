@@ -8,7 +8,8 @@ export interface Plot {
   contactNumber: string;
   details: string;
   size: number;
-  sizeUnit: 'SBU' | 'Carpet Area';
+  pricePerSqyd?: number;
+  totalPrice?: number;
   locality: string;
   propertyTag: 'Owner' | 'Broker';
   documents: { name: string; url: string }[];
