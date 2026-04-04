@@ -21,7 +21,22 @@ export default function SharedPlotView() {
     const fetchPlots = async () => {
       try {
         if (!id) return;
-        const ids = id.split(',');
+        let ids: string[] = [];
+
+        // Check if it's a slug or direct IDs
+        if (id.startsWith('eezily-')) {
+          const slugRef = doc(db, 'shared_links', id);
+          const slugSnap = await getDoc(slugRef);
+          if (slugSnap.exists()) {
+            ids = slugSnap.data().plotIds || [];
+          } else {
+            // Fallback: maybe it's actually an ID that happens to start with eezily-
+            ids = id.split(',');
+          }
+        } else {
+          ids = id.split(',');
+        }
+
         const fetchedPlots: Partial<Plot>[] = [];
 
         for (const plotId of ids) {
@@ -186,6 +201,29 @@ export default function SharedPlotView() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {selectedPlot.externalLink && (
+                <div>
+                  <h2 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <ExternalLink size={16} />
+                    External Resources
+                  </h2>
+                  <a
+                    href={selectedPlot.externalLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 p-4 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-all group"
+                  >
+                    <div className="bg-blue-600 p-2 rounded-lg text-white group-hover:scale-110 transition-transform">
+                      <ExternalLink size={20} />
+                    </div>
+                    <div>
+                      <span className="block font-bold text-blue-900">View Documents / Images</span>
+                      <span className="text-xs text-blue-600 truncate max-w-[200px] block">{selectedPlot.externalLink}</span>
+                    </div>
+                  </a>
                 </div>
               )}
               

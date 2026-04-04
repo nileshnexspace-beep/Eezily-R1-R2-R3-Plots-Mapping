@@ -13,5 +13,6 @@ export interface Plot {
   locality: string;
   propertyTag: 'Owner' | 'Broker';
   documents: { name: string; url: string }[];
+  externalLink?: string;
   authorUid: string;
 }

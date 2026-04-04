@@ -159,5 +159,12 @@ service cloud.firestore {
                     
       allow delete: if isTeamMember();
     }
+
+    match /shared_links/{slug} {
+      // Publicly readable so clients can resolve the slug
+      allow get: if true;
+      // Team members can create slugs
+      allow create: if isTeamMember();
+    }
   }
 }

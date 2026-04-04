@@ -51,6 +51,17 @@
         "createdAt": { "type": "string", "description": "When the user was added" }
       },
       "required": ["email", "role", "addedBy", "createdAt"]
+    },
+    "SharedLink": {
+      "title": "SharedLink",
+      "description": "Maps a readable slug to a list of plot IDs.",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string", "description": "The human-readable part of the URL" },
+        "plotIds": { "type": "array", "items": { "type": "string" }, "description": "The IDs of the plots to show" },
+        "createdAt": { "type": "string", "description": "When the link was created" }
+      },
+      "required": ["slug", "plotIds", "createdAt"]
     }
   },
   "firestore": {
@@ -65,6 +76,10 @@
     "/allowed_emails/{email}": {
       "schema": { "$ref": "#/entities/AllowedEmail" },
       "description": "Stores authorized team members by email."
+    },
+    "/shared_links/{slug}": {
+      "schema": { "$ref": "#/entities/SharedLink" },
+      "description": "Maps a readable slug to a list of plot IDs."
     }
   }
 }

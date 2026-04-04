@@ -31,7 +31,7 @@ export default function AdminDashboard() {
   const [showLocalitySuggestions, setShowLocalitySuggestions] = useState(false);
   const [propertyTag, setPropertyTag] = useState<'Owner' | 'Broker'>('Owner');
   const [details, setDetails] = useState('');
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [externalLink, setExternalLink] = useState('');
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -267,7 +267,7 @@ export default function AdminDashboard() {
     setLocality(plot.locality || '');
     setPropertyTag(plot.propertyTag || 'Owner');
     setDetails(plot.details || '');
-    setFiles(null);
+    setExternalLink(plot.externalLink || '');
     setSelectedPlot(null); // Close info window
   };
 
@@ -302,32 +302,9 @@ export default function AdminDashboard() {
     if (!newPlotPos || !auth.currentUser) return;
 
     setIsSubmitting(true);
-    setUploadProgress({});
     const plotId = editingPlotId || crypto.randomUUID();
 
     try {
-      let documents = editingPlotId ? (plots.find(p => p.id === editingPlotId)?.documents || []) : [];
-      
-      if (files && files.length > 0) {
-        console.log(`Starting sequential upload of ${files.length} files...`);
-        const newDocs: { name: string, url: string }[] = [];
-        
-        for (const file of Array.from(files) as File[]) {
-          setUploadProgress(prev => ({ ...prev, [file.name]: 10 })); // Show initial progress
-          const storageRef = ref(storage, `plots/${plotId}/${file.name}`);
-          
-          // Use uploadBytes for faster, non-resumable upload of small files
-          const result = await uploadBytes(storageRef, file);
-          const url = await getDownloadURL(result.ref);
-          
-          setUploadProgress(prev => ({ ...prev, [file.name]: 100 }));
-          newDocs.push({ name: file.name, url });
-        }
-        
-        documents = [...documents, ...newDocs];
-        console.log("All files uploaded successfully");
-      }
-
       console.log("Saving plot data to Firestore...");
 
       const plotData = {
@@ -341,7 +318,8 @@ export default function AdminDashboard() {
         locality,
         propertyTag,
         details,
-        documents,
+        externalLink,
+        documents: editingPlotId ? (plots.find(p => p.id === editingPlotId)?.documents || []) : [],
         authorUid: editingPlotId ? (plots.find(p => p.id === editingPlotId)?.authorUid || auth.currentUser.uid) : auth.currentUser.uid
       };
 
@@ -369,8 +347,7 @@ export default function AdminDashboard() {
       setLocality('');
       setPropertyTag('Owner');
       setDetails('');
-      setFiles(null);
-      setUploadProgress({});
+      setExternalLink('');
     } catch (err) {
       console.error('Failed to save plot', err);
       alert('Failed to save plot. Please check your permissions.');
@@ -379,9 +356,29 @@ export default function AdminDashboard() {
     }
   };
 
-  const copyShareLink = (id: string) => {
+  const generateSlug = async (ids: string) => {
+    const date = new Date();
+    const dateStr = `${date.getDate().toString().padStart(2, '0')}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getFullYear().toString().slice(-2)}`;
+    const randomStr = Math.random().toString(36).substring(2, 6);
+    const slug = `eezily-${dateStr}-${randomStr}`;
+    
+    try {
+      await setDoc(doc(db, 'shared_links', slug), {
+        slug,
+        plotIds: ids.split(','),
+        createdAt: new Date().toISOString()
+      });
+      return slug;
+    } catch (err) {
+      console.error("Error creating slug", err);
+      return ids; // Fallback to long ID if slug creation fails
+    }
+  };
+
+  const copyShareLink = async (id: string) => {
+    const slug = await generateSlug(id);
     const pathname = window.location.pathname.endsWith('/') ? window.location.pathname : `${window.location.pathname}/`;
-    const url = `${window.location.origin}${pathname}#/share/${id}`;
+    const url = `${window.location.origin}${pathname}#/share/${slug}`;
     navigator.clipboard.writeText(url);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -412,10 +409,11 @@ export default function AdminDashboard() {
     return matchesSearch && matchesTag && matchesSize && matchesLocality;
   });
 
-  const handleShareSelected = () => {
+  const handleShareSelected = async () => {
     if (selectedPlotIds.length === 0) return;
     const ids = selectedPlotIds.join(',');
-    const shareUrl = `${window.location.origin}${window.location.pathname}#/share/${ids}`;
+    const slug = await generateSlug(ids);
+    const shareUrl = `${window.location.origin}${window.location.pathname}#/share/${slug}`;
     navigator.clipboard.writeText(shareUrl);
     setCopiedId('multi');
     setTimeout(() => setCopiedId(null), 2000);
@@ -516,7 +514,6 @@ export default function AdminDashboard() {
                   setLocality('');
                   setPropertyTag('Owner');
                   setDetails('');
-                  setFiles(null);
                 }}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
               >
@@ -929,59 +926,15 @@ export default function AdminDashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1">Documents</label>
-                    <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-neutral-300 border-dashed rounded-lg hover:bg-neutral-50 transition-colors">
-                      <div className="space-y-1 text-center">
-                        <Upload className="mx-auto h-12 w-12 text-neutral-400" />
-                        <div className="flex text-sm text-neutral-600 justify-center">
-                          <label className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
-                            <span>Upload files</span>
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*"
-                              className="sr-only"
-                              onChange={(e) => setFiles(e.target.files)}
-                            />
-                          </label>
-                        </div>
-                        <p className="text-xs text-neutral-500">Images only up to 10MB</p>
-                      </div>
-                    </div>
-                    {files && files.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        <div className="text-sm font-medium text-neutral-700 flex justify-between items-center">
-                          <span>{files.length} file(s) selected</span>
-                          {!isSubmitting && (
-                            <button 
-                              type="button"
-                              onClick={() => setFiles(null)}
-                              className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
-                            >
-                              <X size={12} />
-                              Clear
-                            </button>
-                          )}
-                          {isSubmitting && (
-                            <span className="text-blue-600 animate-pulse">Uploading...</span>
-                          )}
-                        </div>
-                        {isSubmitting && Object.entries(uploadProgress).map(([name, progress]) => (
-                          <div key={name} className="space-y-1">
-                            <div className="flex justify-between text-[10px] text-neutral-500">
-                              <span className="truncate max-w-[200px]">{name}</span>
-                              <span>{Math.round(progress as number)}%</span>
-                            </div>
-                            <div className="w-full bg-neutral-100 rounded-full h-1">
-                              <div 
-                                className="bg-blue-600 h-1 rounded-full transition-all duration-300" 
-                                style={{ width: `${progress as number}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <label className="block text-sm font-medium text-neutral-700 mb-1">External Link (Google Drive, etc.)</label>
+                    <input
+                      type="url"
+                      value={externalLink}
+                      onChange={(e) => setExternalLink(e.target.value)}
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="https://drive.google.com/..."
+                    />
+                    <p className="mt-1 text-[10px] text-neutral-400 italic">Use this if file upload is slow or failing.</p>
                   </div>
                   <div className="flex gap-3 pt-4 pb-2">
                     <button
